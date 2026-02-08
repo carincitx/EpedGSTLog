@@ -1,144 +1,370 @@
 # app.py
 import os
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+import re
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any, List
 
 import pyodbc
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="SpedBusMD API", version="1.0.0")
 
+# ----------------------------
+# Configuration
+# ----------------------------
+ODBC_DRIVER = os.getenv("ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
+SQL_SERVER = os.getenv("SQL_SERVER", "")          # e.g. spedbusmd-sql-german01.database.windows.net
+SQL_DATABASE = os.getenv("SQL_DATABASE", "")      # e.g. spedbusdb
+SQL_USERNAME = os.getenv("SQL_USERNAME", "")      # e.g. spedbusmd-sql-german01-admin
+SQL_PASSWORD = os.getenv("SQL_PASSWORD", "")      # password
+TRUST_SERVER_CERT = os.getenv("TRUST_SERVER_CERT", "true").lower() in ("1", "true", "yes", "y")
+ENCRYPT = os.getenv("ENCRYPT", "true").lower() in ("1", "true", "yes", "y")
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+# 5 minutes (can override)
+NO_SHOW_MINUTES = int(os.getenv("NO_SHOW_MINUTES", "5"))
+
+# If you prefer passing a full ODBC connection string:
+# Example:
+# ODBC_CONN_STR="Driver={ODBC Driver 18 for SQL Server};Server=tcp:...;Database=...;Uid=...;Pwd=...;Encrypt=yes;TrustServerCertificate=yes;Connection Timeout=30;"
+ODBC_CONN_STR = os.getenv("ODBC_CONN_STR", "").strip()
+
+# ----------------------------
+# Event Types
+# ----------------------------
+# Step 3 adds ARRIVED (pending/waiting).
+VALID_EVENT_TYPES = {"ARRIVED", "RIDE", "NO_CALL", "NO_SHOW"}
+
+# Friendly inputs -> stored values
+EVENT_TYPE_ALIASES = {
+    "arrived": "ARRIVED",
+    "arrival": "ARRIVED",
+    "waiting": "ARRIVED",
+    "wait": "ARRIVED",
+    "ride": "RIDE",
+    "boarded": "RIDE",
+    "onboard": "RIDE",
+    "no_call": "NO_CALL",
+    "nocall": "NO_CALL",
+    "no_show": "NO_SHOW",
+    "noshow": "NO_SHOW",
+}
+
+# ----------------------------
+# Models
+# ----------------------------
+class ScanRequest(BaseModel):
+    student_code: str = Field(..., description="Barcode/QR code value for the student (StudentCode)")
+    event_type: str = Field(..., description="arrived | ride | no_call | no_show (friendly inputs allowed)")
+    driver_code: Optional[str] = Field(None, description="Driver identifier/code")
+    aide_code: Optional[str] = Field(None, description="Aide identifier/code")
+    stop_code: Optional[str] = Field(None, description="Stop identifier/code")
+    notes: Optional[str] = Field(None, description="Optional notes")
 
 
-def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
-    val = os.getenv(name, default)
-    if required and (val is None or str(val).strip() == ""):
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return val
+class StudentOut(BaseModel):
+    StudentId: int
+    StudentCode: str
+    StudentName: str
+    DOB: str
+    BusNumber: str
+    ParentPhone: Optional[str] = None
 
 
-def build_connection_string() -> str:
-    """
-    Required env vars:
-      SQL_SERVER   e.g. "spedbusmd-sql-german01.database.windows.net"
-      SQL_DATABASE e.g. "spedbusdb"
-      SQL_USER     e.g. "spedbusmd-sql-german01-admin"
-      SQL_PASSWORD e.g. "yourStrongPassword!"
-    Optional:
-      ODBC_DRIVER (default: ODBC Driver 18 for SQL Server)
-      TRUST_SERVER_CERT (default: true)  -> TrustServerCertificate=yes/no
-      ENCRYPT (default: true)            -> Encrypt=yes/no
-      SQL_TIMEOUT (default: 30)
-    """
-    driver = get_env("ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
-    server = get_env("SQL_SERVER", required=True)
-    database = get_env("SQL_DATABASE", required=True)
-    username = get_env("SQL_USER", required=True)
-    password = get_env("SQL_PASSWORD", required=True)
+class ScanLogOut(BaseModel):
+    LogId: int
+    StudentCode: str
+    StudentName: str
+    DOB: str
+    BusNumber: str
+    EventType: str
+    EventTimeUtc: str
+    DriverCode: Optional[str] = None
+    AideCode: Optional[str] = None
+    StopCode: Optional[str] = None
+    Notes: Optional[str] = None
 
-    trust_server_cert = get_env("TRUST_SERVER_CERT", "true").strip().lower() in ("1", "true", "yes", "y")
-    encrypt = get_env("ENCRYPT", "true").strip().lower() in ("1", "true", "yes", "y")
-    timeout = int(get_env("SQL_TIMEOUT", "30"))
+
+# ----------------------------
+# DB Helpers
+# ----------------------------
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _build_conn_str() -> str:
+    if ODBC_CONN_STR:
+        return ODBC_CONN_STR
+
+    if not (SQL_SERVER and SQL_DATABASE and SQL_USERNAME and SQL_PASSWORD):
+        raise RuntimeError(
+            "Missing DB config. Set ODBC_CONN_STR or SQL_SERVER, SQL_DATABASE, SQL_USERNAME, SQL_PASSWORD."
+        )
+
+    # Note: for Azure SQL, Encrypt=yes is recommended. TrustServerCertificate can be true for dev.
+    encrypt_str = "yes" if ENCRYPT else "no"
+    trust_str = "yes" if TRUST_SERVER_CERT else "no"
+
+    # Use tcp: prefix for Azure SQL server names
+    server = SQL_SERVER
+    if not server.lower().startswith("tcp:"):
+        server = f"tcp:{server}"
 
     return (
-        f"DRIVER={{{driver}}};"
-        f"SERVER={server};"
-        f"DATABASE={database};"
-        f"UID={username};"
-        f"PWD={password};"
-        f"Encrypt={'yes' if encrypt else 'no'};"
-        f"TrustServerCertificate={'yes' if trust_server_cert else 'no'};"
-        f"Connection Timeout={timeout};"
+        f"Driver={{{ODBC_DRIVER}}};"
+        f"Server={server};"
+        f"Database={SQL_DATABASE};"
+        f"Uid={SQL_USERNAME};"
+        f"Pwd={SQL_PASSWORD};"
+        f"Encrypt={encrypt_str};"
+        f"TrustServerCertificate={trust_str};"
+        f"Connection Timeout=30;"
     )
 
 
-def get_db() -> pyodbc.Connection:
-    return pyodbc.connect(build_connection_string(), autocommit=False)
+def get_conn() -> pyodbc.Connection:
+    conn_str = _build_conn_str()
+    # autocommit=False so we can control transactions
+    return pyodbc.connect(conn_str, autocommit=False)
 
 
-def row_to_dict(cursor: pyodbc.Cursor, row: pyodbc.Row) -> Dict[str, Any]:
+def normalize_student_code(code: str) -> str:
+    code = (code or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="student_code is required")
+    return code
+
+
+def normalize_event_type(raw: str) -> str:
+    raw = (raw or "").strip().lower()
+    raw = raw.replace(" ", "_").replace("-", "_")
+    raw = re.sub(r"[^a-z_]", "", raw)
+
+    # direct alias
+    event = EVENT_TYPE_ALIASES.get(raw)
+    if event:
+        return event
+
+    # maybe user typed already like NO_SHOW
+    upper = raw.upper()
+    if upper in VALID_EVENT_TYPES:
+        return upper
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Invalid event_type. Use: arrived | ride | no_call | no_show",
+    )
+
+
+def row_to_dict(cursor, row) -> Dict[str, Any]:
     cols = [c[0] for c in cursor.description]
     return {cols[i]: row[i] for i in range(len(cols))}
 
 
-def normalize_student(stu: Dict[str, Any]) -> Dict[str, Any]:
-    # Convert DOB to string for JSON safety
-    if "DOB" in stu and stu["DOB"] is not None:
-        stu["DOB"] = str(stu["DOB"])
-    return stu
+# ----------------------------
+# Core Logic: ARRIVED -> auto NO_SHOW after N minutes
+# ----------------------------
+def finalize_expired_arrivals(conn: pyodbc.Connection, minutes: int = NO_SHOW_MINUTES) -> int:
+    """
+    Converts ARRIVED logs older than `minutes` into NO_SHOW, but only if no later terminal event exists.
+    Terminal events: RIDE, NO_CALL, NO_SHOW
+    Returns number of NO_SHOW logs inserted.
+    """
+    cutoff = utc_now() - timedelta(minutes=minutes)
+
+    cur = conn.cursor()
+
+    # 1) Find candidate students where latest event is ARRIVED and it's older than cutoff
+    # We'll treat "latest" by EventTimeUtc, and tie-break by LogId.
+    candidates_sql = """
+    WITH Latest AS (
+      SELECT
+        StudentCode,
+        MAX(EventTimeUtc) AS MaxTime
+      FROM dbo.ScanLogs
+      GROUP BY StudentCode
+    ),
+    LatestRows AS (
+      SELECT s.*
+      FROM dbo.ScanLogs s
+      INNER JOIN Latest l
+        ON s.StudentCode = l.StudentCode
+       AND s.EventTimeUtc = l.MaxTime
+    ),
+    PickOne AS (
+      SELECT TOP (1000) *
+      FROM LatestRows
+      WHERE EventType = 'ARRIVED'
+        AND EventTimeUtc <= ?
+      ORDER BY EventTimeUtc ASC
+    )
+    SELECT
+      LogId, StudentCode, StudentName, DOB, BusNumber, EventTimeUtc, DriverCode, AideCode, StopCode
+    FROM PickOne;
+    """
+
+    cur.execute(candidates_sql, cutoff)
+    rows = cur.fetchall()
+    if not rows:
+        return 0
+
+    inserted = 0
+
+    # 2) For each candidate, ensure there is no newer terminal event after that ARRIVED (safety),
+    # then insert NO_SHOW.
+    check_sql = """
+    SELECT TOP (1) LogId, EventType, EventTimeUtc
+    FROM dbo.ScanLogs
+    WHERE StudentCode = ?
+    ORDER BY EventTimeUtc DESC, LogId DESC;
+    """
+
+    insert_sql = """
+    INSERT INTO dbo.ScanLogs
+      (StudentCode, StudentName, DOB, BusNumber, EventType, EventTimeUtc, DriverCode, AideCode, StopCode, Notes)
+    VALUES
+      (?, ?, ?, ?, 'NO_SHOW', ?, ?, ?, ?, ?);
+    """
+
+    for r in rows:
+        log_id, student_code, student_name, dob, bus_number, arrived_time, driver_code, aide_code, stop_code = r
+
+        cur.execute(check_sql, student_code)
+        latest = cur.fetchone()
+        if not latest:
+            continue
+
+        latest_type = latest[1]
+        latest_time = latest[2]
+
+        # Only convert if latest is still ARRIVED and older than cutoff
+        if latest_type != "ARRIVED":
+            continue
+        if latest_time is None or latest_time > cutoff:
+            continue
+
+        note = f"Auto NO_SHOW after {minutes} min wait"
+        cur.execute(
+            insert_sql,
+            student_code,
+            student_name,
+            dob,
+            bus_number,
+            utc_now(),
+            driver_code,
+            aide_code,
+            stop_code,
+            note,
+        )
+        inserted += 1
+
+    return inserted
 
 
-# -----------------------------
-# Models
-# -----------------------------
-class ScanRequest(BaseModel):
-    code: str = Field(..., description="StudentCode from QR/barcode, e.g. STU-1001")
-    event_type: str = Field(..., description="ride | no-call | no-show")
-    driver_code: Optional[str] = None
-    aide_code: Optional[str] = None
-    stop_code: Optional[str] = None
-    notes: Optional[str] = None
-
-
-# -----------------------------
-# Endpoints
-# -----------------------------
-@app.get("/")
-def root():
-    return {"ok": True, "service": "SpedBusMD API", "time_utc": utc_now_iso()}
-
-
-@app.get("/health")
-def health():
-    driver = get_env("ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
-    trust_server_cert = get_env("TRUST_SERVER_CERT", "true").strip().lower() in ("1", "true", "yes", "y")
+def schedule_auto_no_show(student_code: str, arrived_time_utc: datetime, minutes: int = NO_SHOW_MINUTES):
+    """
+    Background fallback: waits N minutes then attempts to finalize if still ARRIVED.
+    Also protected by finalize_expired_arrivals() being called on each request.
+    """
+    # Sleep in seconds
+    time.sleep(max(0, minutes * 60))
 
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT 1")
-        cur.fetchone()
-        cur.close()
-        conn.close()
-        return {
-            "ok": True,
-            "time_utc": utc_now_iso(),
-            "db": "ok",
-            "trust_server_cert": trust_server_cert,
-            "driver": driver,
-        }
+        conn = get_conn()
+        try:
+            # Convert only if student still has ARRIVED as latest and it's older than cutoff
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT TOP (1) LogId, EventType, EventTimeUtc, StudentName, DOB, BusNumber, DriverCode, AideCode, StopCode
+                FROM dbo.ScanLogs
+                WHERE StudentCode = ?
+                ORDER BY EventTimeUtc DESC, LogId DESC;
+                """,
+                student_code,
+            )
+            latest = cur.fetchone()
+            if not latest:
+                conn.rollback()
+                return
+
+            _, latest_type, latest_time, student_name, dob, bus_number, driver_code, aide_code, stop_code = latest
+            cutoff = utc_now() - timedelta(minutes=minutes)
+
+            if latest_type == "ARRIVED" and latest_time is not None and latest_time <= cutoff:
+                cur.execute(
+                    """
+                    INSERT INTO dbo.ScanLogs
+                      (StudentCode, StudentName, DOB, BusNumber, EventType, EventTimeUtc, DriverCode, AideCode, StopCode, Notes)
+                    VALUES
+                      (?, ?, ?, ?, 'NO_SHOW', ?, ?, ?, ?, ?);
+                    """,
+                    student_code,
+                    student_name,
+                    dob,
+                    bus_number,
+                    utc_now(),
+                    driver_code,
+                    aide_code,
+                    stop_code,
+                    f"Auto NO_SHOW after {minutes} min wait (bg)",
+                )
+                conn.commit()
+            else:
+                conn.rollback()
+        finally:
+            conn.close()
+    except Exception:
+        # Don't crash the server because a background job failed
+        pass
+
+
+# ----------------------------
+# Routes
+# ----------------------------
+@app.get("/health")
+def health():
+    """
+    Basic health + DB connectivity check.
+    """
+    info = {
+        "ok": True,
+        "time_utc": utc_now().isoformat(),
+        "db": "unknown",
+        "trust_server_cert": TRUST_SERVER_CERT,
+        "driver": ODBC_DRIVER,
+    }
+
+    try:
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+            info["db"] = "ok"
+            conn.rollback()
+        finally:
+            conn.close()
     except Exception as e:
-        return {
-            "ok": False,
-            "time_utc": utc_now_iso(),
-            "db": "error",
-            "trust_server_cert": trust_server_cert,
-            "driver": driver,
-            "detail": str(e),
-        }
+        info["db"] = f"error: {str(e)}"
+
+    return info
 
 
-@app.get("/students/{student_code}")
+@app.get("/students/{student_code}", response_model=StudentOut)
 def get_student(student_code: str):
-    """
-    Tables:
-      Students(StudentId, StudentCode, StudentName, DOB, BusNumber, ParentPhone)
-    """
-    conn = get_db()
+    student_code = normalize_student_code(student_code)
+
+    conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT StudentId, StudentCode, StudentName, DOB, BusNumber, ParentPhone
-            FROM Students
-            WHERE StudentCode = ?
+            SELECT TOP (1)
+              StudentId, StudentCode, StudentName, DOB, BusNumber, ParentPhone
+            FROM dbo.Students
+            WHERE StudentCode = ?;
             """,
             student_code,
         )
@@ -146,139 +372,166 @@ def get_student(student_code: str):
         if not row:
             raise HTTPException(status_code=404, detail="Student not found")
 
-        stu = normalize_student(row_to_dict(cur, row))
-        return {"ok": True, "student": stu}
+        # ensure string formatting
+        student = {
+            "StudentId": int(row[0]),
+            "StudentCode": row[1],
+            "StudentName": row[2],
+            "DOB": str(row[3]),
+            "BusNumber": str(row[4]),
+            "ParentPhone": row[5],
+        }
+        conn.rollback()
+        return student
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
 
 
-@app.post("/scan")
-def scan(scan_req: ScanRequest):
-    """
-    Tables:
-      Students(StudentId, StudentCode, StudentName, DOB, BusNumber, ParentPhone)
+@app.get("/logs/recent", response_model=List[ScanLogOut])
+def recent_logs(limit: int = 50):
+    limit = max(1, min(limit, 200))
 
-      ScanLogs(
-        LogId, StudentCode, StudentName, DOB, BusNumber,
-        EventType, EventTimeUtc, DriverCode, AideCode, StopCode, Notes
-      )
-    """
-    event_type = scan_req.event_type.strip().lower()
-    if event_type not in ("ride", "no-call", "no-show"):
-        raise HTTPException(status_code=400, detail="Invalid event_type. Use: ride | no-call | no-show")
-
-    conn = get_db()
+    conn = get_conn()
     try:
         cur = conn.cursor()
 
-        # Pull student info in the background based on scanned code
+        # Finalize any expired ARRIVED first (Step 3 safety net)
+        finalize_expired_arrivals(conn, NO_SHOW_MINUTES)
+
+        cur.execute(
+            f"""
+            SELECT TOP ({limit})
+              LogId, StudentCode, StudentName, DOB, BusNumber, EventType, EventTimeUtc, DriverCode, AideCode, StopCode, Notes
+            FROM dbo.ScanLogs
+            ORDER BY EventTimeUtc DESC, LogId DESC;
+            """
+        )
+        rows = cur.fetchall()
+        conn.rollback()
+
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "LogId": int(r[0]),
+                    "StudentCode": r[1],
+                    "StudentName": r[2],
+                    "DOB": str(r[3]),
+                    "BusNumber": str(r[4]),
+                    "EventType": r[5],
+                    "EventTimeUtc": r[6].replace(tzinfo=timezone.utc).isoformat() if hasattr(r[6], "replace") else str(r[6]),
+                    "DriverCode": r[7],
+                    "AideCode": r[8],
+                    "StopCode": r[9],
+                    "Notes": r[10],
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+@app.post("/scan", response_model=ScanLogOut)
+def scan_student(scan_req: ScanRequest, background: BackgroundTasks):
+    student_code = normalize_student_code(scan_req.student_code)
+    event_type = normalize_event_type(scan_req.event_type)
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+
+        # Step 3 safety net: finalize any expired ARRIVED before writing new logs
+        finalize_expired_arrivals(conn, NO_SHOW_MINUTES)
+
+        # Pull student record (your “scan pulls student info in background” requirement)
         cur.execute(
             """
-            SELECT StudentCode, StudentName, DOB, BusNumber, ParentPhone
-            FROM Students
-            WHERE StudentCode = ?
+            SELECT TOP (1)
+              StudentId, StudentCode, StudentName, DOB, BusNumber, ParentPhone
+            FROM dbo.Students
+            WHERE StudentCode = ?;
             """,
-            scan_req.code,
+            student_code,
         )
-        row = cur.fetchone()
-        if not row:
+        s = cur.fetchone()
+        if not s:
             raise HTTPException(status_code=404, detail="Student not found")
 
-        stu = normalize_student(row_to_dict(cur, row))
+        student_name = s[2]
+        dob = str(s[3])
+        bus_number = str(s[4])
 
-        # Insert into ScanLogs with your exact columns
+        now_utc = utc_now()
+
+        # Insert scan log
         cur.execute(
             """
-            INSERT INTO ScanLogs
+            INSERT INTO dbo.ScanLogs
               (StudentCode, StudentName, DOB, BusNumber, EventType, EventTimeUtc, DriverCode, AideCode, StopCode, Notes)
+            OUTPUT INSERTED.LogId
             VALUES
-              (?, ?, ?, ?, ?, SYSUTCDATETIME(), ?, ?, ?, ?)
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            stu["StudentCode"],
-            stu["StudentName"],
-            None if stu.get("DOB") is None else stu.get("DOB"),  # safe for SQL
-            stu.get("BusNumber"),
+            student_code,
+            student_name,
+            dob,
+            bus_number,
             event_type,
+            now_utc,
             scan_req.driver_code,
             scan_req.aide_code,
             scan_req.stop_code,
             scan_req.notes,
         )
-
+        new_id = cur.fetchone()[0]
         conn.commit()
 
+        # If ARRIVED, schedule auto NO_SHOW after N minutes (fallback behavior)
+        if event_type == "ARRIVED":
+            background.add_task(schedule_auto_no_show, student_code, now_utc, NO_SHOW_MINUTES)
+
         return {
-            "ok": True,
-            "student": {
-                "StudentCode": stu.get("StudentCode"),
-                "StudentName": stu.get("StudentName"),
-                "DOB": stu.get("DOB"),
-                "BusNumber": stu.get("BusNumber"),
-            },
-            "log": {
-                "EventType": event_type,
-                "DriverCode": scan_req.driver_code,
-                "AideCode": scan_req.aide_code,
-                "StopCode": scan_req.stop_code,
-                "EventTimeUtc": utc_now_iso(),
-            },
-            "actions": {
-                "can_call_parent": bool(stu.get("ParentPhone")),
-                "parent_phone": stu.get("ParentPhone"),
-            },
+            "LogId": int(new_id),
+            "StudentCode": student_code,
+            "StudentName": student_name,
+            "DOB": dob,
+            "BusNumber": bus_number,
+            "EventType": event_type,
+            "EventTimeUtc": now_utc.isoformat(),
+            "DriverCode": scan_req.driver_code,
+            "AideCode": scan_req.aide_code,
+            "StopCode": scan_req.stop_code,
+            "Notes": scan_req.notes,
         }
-
-    except HTTPException:
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
 
 
-@app.get("/logs/recent")
-def recent_logs(limit: int = 50):
+@app.post("/finalize-expired-arrivals")
+def finalize_now():
     """
-    Quick endpoint to verify writes.
+    Optional admin endpoint: force conversion of expired ARRIVED -> NO_SHOW.
+    You can protect this later with login.
     """
-    limit = max(1, min(limit, 500))
-    conn = get_db()
+    conn = get_conn()
     try:
         cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT TOP ({limit})
-              LogId, StudentCode, StudentName, DOB, BusNumber, EventType, EventTimeUtc,
-              DriverCode, AideCode, StopCode, Notes
-            FROM ScanLogs
-            ORDER BY EventTimeUtc DESC
-            """
-        )
-        rows = cur.fetchall()
-        logs = []
-        for r in rows:
-            d = row_to_dict(cur, r)
-            if d.get("DOB") is not None:
-                d["DOB"] = str(d["DOB"])
-            if d.get("EventTimeUtc") is not None:
-                d["EventTimeUtc"] = str(d["EventTimeUtc"])
-            logs.append(d)
-        return {"ok": True, "count": len(logs), "logs": logs}
+        inserted = finalize_expired_arrivals(conn, NO_SHOW_MINUTES)
+        conn.commit()
+        return {"ok": True, "inserted_no_show": inserted}
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
 
 
-# Local run:
-#   pip install -r requirements.txt
-#   uvicorn app:app --reload --port 8000
+# ----------------------------
+# IMPORTANT: SQL CHECK constraint update for Step 3
+# ----------------------------
+# If you already added a CHECK constraint that only allowed ('RIDE','NO_CALL','NO_SHOW'),
+# you MUST update it to include 'ARRIVED' too:
+#
+# ALTER TABLE dbo.ScanLogs DROP CONSTRAINT CK_ScanLogs_EventType;
+# ALTER TABLE dbo.ScanLogs
+#   ADD CONSTRAINT CK_ScanLogs_EventType
+#   CHECK (EventType IN ('ARRIVED','RIDE','NO_CALL','NO_SHOW'));
+#
+# ----------------------------
