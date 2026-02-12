@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEDSCAN - Validate</title>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; background:#f5f5f5; margin:0; }
+    .wrap { max-width: 980px; margin: 18px auto; padding: 0 16px; }
+
+    /* Top bar (COPIED FROM INDEX) */
+    .topbar{
+      background:#111;
+      color:#fff;
+      border-radius:12px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 10px rgba(0,0,0,.12);
+      margin-bottom:14px;
+    }
+    .brand{ font-weight:900; letter-spacing:.5px; }
+    .rightbar{ display:flex; align-items:center; gap:10px; }
+    .pill{
+      display:flex; align-items:center; gap:8px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.16);
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:#aaa; }
+    .dot.online{ background:#25c26e; }
+    .dot.offline{ background:#ff3b30; }
+
+    .iconbtn{
+      width:40px; height:40px;
+      border-radius:10px;
+      border:0;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+      color:#111;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+    .iconbtn:active{ transform:scale(.98); }
+    .iconbtn svg{ width:20px; height:20px; }
+
+    /* Page card (same look as index) */
+    .card { background:white; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding:18px; margin-bottom:16px; }
+    h1 { text-align:center; margin: 10px 0 4px; }
+
+    label { font-weight:600; display:block; margin:10px 0 6px; }
+    input { width:100%; padding:12px; border-radius:10px; border:1px solid #ccc; font-size:16px; background:#fff; }
+
+    .btnrow { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button { flex:1; padding:14px; border-radius:12px; border:0; font-size:18px; font-weight:700; cursor:pointer; }
+    .btn-blue { background:#0b66ff; color:white; }
+    .btn-gray { background:#eaeaea; color:#111; }
+
+    .status { margin-top:10px; padding:10px; border-radius:10px; background:#f0f0f0; font-weight:600; }
+    .big { font-size:18px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <!-- TOPBAR (exact SVGs from your index) -->
+    <div class="topbar">
+      <div class="brand">SPEDSCAN</div>
+
+      <div class="rightbar">
+        <div class="pill" id="netPill">
+          <span class="dot offline" id="netDot"></span>
+          <span id="netText">Offline</span>
+        </div>
+
+        <!-- QR Codes -->
+        <button class="iconbtn" title="QR Codes" onclick="location.href='/qrcode'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="5" height="5"></rect>
+            <rect x="16" y="3" width="5" height="5"></rect>
+            <rect x="3" y="16" width="5" height="5"></rect>
+            <rect x="14" y="14" width="3" height="3"></rect>
+            <path d="M21 14v7"></path>
+            <path d="M14 21h7"></path>
+            <path d="M10 10h1v1h-1z"></path>
+            <path d="M12 12h1v1h-1z"></path>
+          </svg>
+        </button>
+
+        <!-- Setup -->
+        <button class="iconbtn" title="Setup" onclick="location.href='/setup'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 3.4 19.4l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 2.18 16H2a2 2 0 1 1 0-4h.18a1.65 1.65 0 0 0 1.22-2.82l-.06-.06A2 2 0 1 1 5.34 3.4l.06.06A1.65 1.65 0 0 0 7 3.18V3a2 2 0 1 1 4 0v.18a1.65 1.65 0 0 0 2.82 1.22l.06-.06A2 2 0 1 1 20.6 5.34l-.06.06A1.65 1.65 0 0 0 20.82 7H21a2 2 0 1 1 0 4h-.18a1.65 1.65 0 0 0-1.22 2.82z"></path>
+          </svg>
+        </button>
+
+        <!-- Today -->
+        <button class="iconbtn" title="Today Log" onclick="location.href='/today'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 3h10M5 7h14M5 19h14M9 11h6M9 15h6"></path>
+          </svg>
+        </button>
+
+        <!-- Validate (current page) -->
+        <button class="iconbtn" title="Validate" onclick="location.href='/validate'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6L9 17l-5-5"></path>
+          </svg>
+        </button>
+
+        <!-- Report -->
+        <button class="iconbtn" title="Report" onclick="location.href='/report'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9V2h12v7"></path>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="card">
+      <h1>✅ Validate</h1>
+
+      <label>Student Code</label>
+      <input id="code" placeholder="Scan/enter StudentCode" />
+
+      <div class="btnrow">
+        <button class="btn-blue" id="btnCheck">Check</button>
+        <button class="btn-gray" onclick="location.href='/'">← Back to Scan</button>
+      </div>
+
+      <div class="status big" id="msg">Ready.</div>
+    </div>
+
+  </div>
+
+  <script>
+    // Online/offline indicator (same logic style as index)
+    const netDot = document.getElementById("netDot");
+    const netText = document.getElementById("netText");
+    function updateNet() {
+      const online = navigator.onLine;
+      netDot.classList.toggle("online", online);
+      netDot.classList.toggle("offline", !online);
+      netText.textContent = online ? "Online" : "Offline";
+    }
+    window.addEventListener("online", updateNet);
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    const $ = (id)=>document.getElementById(id);
+    const msg = $("msg");
+
+    async function apiJson(url) {
+      const r = await fetch(url);
+      const txt = await r.text();
+      let data;
+      try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!r.ok) throw new Error(data.detail || data.error || txt || r.statusText);
+      return data;
+    }
+
+    function fmtMMSS(sec){
+      sec = Number(sec || 0);
+      const m = Math.floor(sec/60);
+      const s = String(sec%60).padStart(2,"0");
+      return `${m}:${s}`;
+    }
+
+    async function check() {
+      const code = $("code").value.trim().toUpperCase();
+      if (!code) { msg.textContent = "Enter a StudentCode."; return; }
+
+      msg.textContent = "Checking…";
+      try {
+        const p = await apiJson(`/pending/${encodeURIComponent(code)}`);
+
+        if (p.status === "PENDING") {
+          msg.textContent = `PENDING — time left ${fmtMMSS(p.seconds_remaining || 0)} (MM:SS)`;
+        } else if (p.status === "NO_CALL_READY") {
+          msg.textContent = "NO CALL READY — wait time passed, you can mark NO CALL / NO SHOW.";
+        } else if (p.status === "RIDE") {
+          msg.textContent = "COMPLETED — already marked RIDE.";
+        } else if (p.status === "NO_CALL_NO_SHOW") {
+          msg.textContent = "COMPLETED — already marked NO CALL / NO SHOW.";
+        } else if (p.status === "NOT_ARRIVED") {
+          msg.textContent = "NOT ARRIVED — no ARRIVED logged for today.";
+        } else {
+          msg.textContent = `Status: ${p.status}`;
+        }
+      } catch (e) {
+        msg.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    $("btnCheck").onclick = check;
+    $("code").addEventListener("keydown", (e)=>{ if(e.key==="Enter") check(); });
+  </script>
+</body>
+</html>

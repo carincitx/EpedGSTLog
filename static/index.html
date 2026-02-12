@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEDSCAN</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; background:#f5f5f5; margin:0; }
+    .wrap { max-width: 980px; margin: 18px auto; padding: 0 16px; }
+
+    /* Top bar */
+    .topbar{
+      background:#111;
+      color:#fff;
+      border-radius:12px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 10px rgba(0,0,0,.12);
+      margin-bottom:14px;
+    }
+    .brand{ font-weight:900; letter-spacing:.5px; }
+    .rightbar{ display:flex; align-items:center; gap:10px; }
+    .pill{
+      display:flex; align-items:center; gap:8px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.16);
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:#aaa; }
+    .dot.online{ background:#25c26e; }
+    .dot.offline{ background:#ff3b30; }
+
+    .iconbtn{
+      width:40px; height:40px;
+      border-radius:10px;
+      border:0;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+      color:#111;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+    .iconbtn:active{ transform:scale(.98); }
+    .iconbtn svg{ width:20px; height:20px; }
+
+    .card { background:white; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding:18px; margin-bottom:16px; }
+    h1 { text-align:center; margin: 10px 0 4px; }
+
+    /* hidden legend + hidden system status */
+    .sub { display:none; }
+    #sysStatus { display:none; }
+
+    label { font-weight:600; display:block; margin:10px 0 6px; }
+    input, select { width:100%; padding:12px; border-radius:10px; border:1px solid #ccc; font-size:16px; background:#fff; }
+
+    .btnrow { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button { flex:1; padding:14px; border-radius:12px; border:0; font-size:18px; font-weight:700; cursor:pointer; }
+    .btn-scan { background:#111; color:white; }
+    .btn-gray { background:#eaeaea; color:#111; }
+    .btn-blue { background:#0b66ff; color:white; }
+    .btn-green { background:#1f9d55; color:white; }
+    .btn-red { background:#d90429; color:white; }
+    .btn-disabled { opacity:.35; cursor:not-allowed; }
+
+    .status { margin-top:10px; padding:10px; border-radius:10px; background:#f0f0f0; font-weight:600; }
+    .student { font-size:20px; font-weight:800; margin:0; }
+    .meta { margin: 4px 0; font-weight:600; }
+
+    /* Shift toggle */
+    .seg {
+      display:flex;
+      border:1px solid #ddd;
+      border-radius:12px;
+      overflow:hidden;
+      background:#fafafa;
+    }
+    .seg button{
+      flex:1;
+      padding:12px 10px;
+      border:0;
+      background:transparent;
+      font-weight:900;
+      font-size:16px;
+      cursor:pointer;
+    }
+    .seg button.active{
+      background:#0b66ff;
+      color:#fff;
+    }
+
+    /* FULLSCREEN camera overlay */
+    .scannerOverlay {
+      display:none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 9999;
+    }
+    .scannerHeader {
+      position:absolute;
+      top:0; left:0; right:0;
+      padding: 12px;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      background: rgba(0,0,0,.45);
+      backdrop-filter: blur(6px);
+      color:#fff;
+    }
+    .scannerHeader .title {
+      font-weight:800;
+      font-size:16px;
+    }
+    .scannerHeader button {
+      flex:0;
+      padding:10px 14px;
+      border-radius:10px;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      border:0;
+      background:#fff;
+      color:#111;
+    }
+    #reader { position:absolute; inset: 0; }
+
+    #studentCard { display:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+   <div class="topbar">
+  <div class="brand">SPEDSCAN</div>
+
+  <div class="rightbar">
+    <div class="pill" id="netPill">
+      <span class="dot offline" id="netDot"></span>
+      <span id="netText">Offline</span>
+    </div>
+
+    <!-- QR Codes -->
+    <button class="iconbtn" title="QR Codes" onclick="location.href='/qrcode'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="5" height="5"></rect>
+        <rect x="16" y="3" width="5" height="5"></rect>
+        <rect x="3" y="16" width="5" height="5"></rect>
+        <rect x="14" y="14" width="3" height="3"></rect>
+        <path d="M21 14v7"></path>
+        <path d="M14 21h7"></path>
+        <path d="M10 10h1v1h-1z"></path>
+        <path d="M12 12h1v1h-1z"></path>
+      </svg>
+    </button>
+
+    <!-- Setup -->
+    <button class="iconbtn" title="Setup" onclick="location.href='/setup'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 3.4 19.4l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 2.18 16H2a2 2 0 1 1 0-4h.18a1.65 1.65 0 0 0 1.22-2.82l-.06-.06A2 2 0 1 1 5.34 3.4l.06.06A1.65 1.65 0 0 0 7 3.18V3a2 2 0 1 1 4 0v.18a1.65 1.65 0 0 0 2.82 1.22l.06-.06A2 2 0 1 1 20.6 5.34l-.06.06A1.65 1.65 0 0 0 20.82 7H21a2 2 0 1 1 0 4h-.18a1.65 1.65 0 0 0-1.22 2.82z"></path>
+      </svg>
+    </button>
+
+    <!-- Today -->
+    <button class="iconbtn" title="Today Log" onclick="location.href='/today'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 3h10M5 7h14M5 19h14M9 11h6M9 15h6"></path>
+      </svg>
+    </button>
+
+    <!-- Validate -->
+    <button class="iconbtn" title="Validate" onclick="location.href='/validate'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"></path>
+      </svg>
+    </button>
+
+    <!-- Report -->
+    <button class="iconbtn" title="Report" onclick="location.href='/report'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 9V2h12v7"></path>
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+        <rect x="6" y="14" width="12" height="8"></rect>
+      </svg>
+    </button>
+  </div>
+</div>
+
+
+    <div class="card">
+      <h1></h1>
+      <p class="sub">Scan student QR/barcode → ARRIVED → RIDE or NO CALL / NO SHOW</p>
+
+      <label>Trip</label>
+      <div class="seg">
+        <button id="btnAM" type="button">Morning (AM)</button>
+        <button id="btnPM" type="button">Afternoon (PM)</button>
+      </div>
+
+      <label>Driver Code</label>
+      <select id="driver">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+      </select>
+
+      <label>Aide Code</label>
+      <select id="aide">
+        <option value="M">M</option><option value="B">B</option><option value="T">T</option>
+      </select>
+
+      <div class="btnrow">
+        <button class="btn-scan" id="btnStart">📷 Scan Code</button>
+        <button class="btn-gray" id="btnManual">⌨️ Manual Entry</button>
+      </div>
+
+      <div class="status" id="sysStatus">Loading…</div>
+    </div>
+
+    <div class="card" id="studentCard">
+      <p class="student" id="stuName">Student</p>
+      <div class="meta" id="stuBus">Bus</div>
+      <div class="meta" id="stuPhone">Parent:</div>
+      <div class="meta" id="timerLine">⏱️ Waiting…</div>
+
+      <div class="btnrow">
+        <button class="btn-blue" id="btnCall">📞 Call Parent</button>
+      </div>
+
+      <div class="btnrow" id="actionRow">
+        <button class="btn-green" id="btnRide">✅ RIDE</button>
+        <button class="btn-red btn-disabled" id="btnNoCall" disabled>❌ NO CALL / NO SHOW</button>
+      </div>
+
+      <div class="status" id="actionStatus">Ready.</div>
+    </div>
+  </div>
+
+  <!-- Fullscreen overlay for scanner -->
+  <div class="scannerOverlay" id="scannerOverlay">
+    <div class="scannerHeader">
+      <div class="title">Scan Student Code</div>
+      <button id="btnCloseScan" type="button">Close</button>
+    </div>
+    <div id="reader"></div>
+  </div>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script>
+    const sysStatus = document.getElementById("sysStatus");
+    const studentCard = document.getElementById("studentCard");
+    const stuName = document.getElementById("stuName");
+    const stuBus = document.getElementById("stuBus");
+    const stuPhone = document.getElementById("stuPhone");
+    const timerLine = document.getElementById("timerLine");
+    const actionStatus = document.getElementById("actionStatus");
+
+    const driverEl = document.getElementById("driver");
+    const aideEl = document.getElementById("aide");
+
+    const btnStart = document.getElementById("btnStart");
+    const btnManual = document.getElementById("btnManual");
+    const btnCall = document.getElementById("btnCall");
+    const btnRide = document.getElementById("btnRide");
+    const btnNoCall = document.getElementById("btnNoCall");
+
+    const scannerOverlay = document.getElementById("scannerOverlay");
+    const btnCloseScan = document.getElementById("btnCloseScan");
+
+    const btnAM = document.getElementById("btnAM");
+    const btnPM = document.getElementById("btnPM");
+
+    const netDot = document.getElementById("netDot");
+    const netText = document.getElementById("netText");
+
+    let currentStudentCode = null;
+    let pollTimer = null;
+    let qr = null;
+
+    let finalized = false;
+    let busy = false;
+
+    // -------------------------
+    // Shift (AM/PM)
+    // -------------------------
+    function getShift() {
+      return localStorage.getItem("SPEDSCAN_SHIFT") || "PM";
+    }
+    function setShift(v) {
+      localStorage.setItem("SPEDSCAN_SHIFT", v);
+      renderShift();
+    }
+    function renderShift() {
+      const s = getShift();
+      btnAM.classList.toggle("active", s === "AM");
+      btnPM.classList.toggle("active", s === "PM");
+    }
+    btnAM.onclick = () => setShift("AM");
+    btnPM.onclick = () => setShift("PM");
+    renderShift();
+
+    // -------------------------
+    // Online/offline indicator
+    // -------------------------
+    function updateNet() {
+      const online = navigator.onLine;
+      netDot.classList.toggle("online", online);
+      netDot.classList.toggle("offline", !online);
+      netText.textContent = online ? "Online" : "Offline";
+    }
+    window.addEventListener("online", updateNet);
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    // -------------------------
+    // helpers
+    // -------------------------
+    function stopPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    function setNoCallEnabled(enabled) {
+      if (finalized) {
+        btnNoCall.disabled = true;
+        btnNoCall.classList.add("btn-disabled");
+        return;
+      }
+      if (enabled) {
+        btnNoCall.disabled = false;
+        btnNoCall.classList.remove("btn-disabled");
+      } else {
+        btnNoCall.disabled = true;
+        btnNoCall.classList.add("btn-disabled");
+      }
+    }
+
+    function fmtMMSS(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${String(s).padStart(2, "0")}`;
+    }
+
+    async function apiJson(url, opts) {
+      const r = await fetch(url, opts);
+      const txt = await r.text();
+      let data;
+      try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!r.ok) throw new Error(data.detail || data.error || txt || r.statusText);
+      return data;
+    }
+
+    let WAIT_MINUTES = 5;
+
+    async function checkHealthAndConfig() {
+      try {
+        const h = await apiJson("/health");
+        const cfg = (h.config || {});
+        const w = parseInt(cfg.WAIT_MINUTES || cfg.wait_minutes || "5", 10);
+        if (!Number.isNaN(w)) WAIT_MINUTES = w;
+      } catch (e) {
+        sysStatus.style.display = "block";
+        sysStatus.textContent = `Health error: ${e.message}`;
+      }
+    }
+
+    async function loadStudent(studentCode) {
+      const s = await apiJson(`/students/${encodeURIComponent(studentCode)}`);
+      stuName.textContent = s.StudentName;
+      stuBus.textContent = `Bus ${s.BusNumber}`;
+      stuPhone.textContent = s.ParentPhone ? `Parent: ${s.ParentPhone}` : `Parent: (none)`;
+      btnCall.onclick = () => {
+        if (!s.ParentPhone) return;
+        window.location.href = `tel:${s.ParentPhone}`;
+      };
+      studentCard.style.display = "block";
+    }
+
+    async function logArrived(studentCode) {
+      const driver = driverEl.value.trim();
+      const aide = aideEl.value.trim();
+      const shift = getShift();
+
+      const q = new URLSearchParams();
+      if (driver) q.set("driver_code", driver);
+      if (aide) q.set("aide_code", aide);
+      if (shift) q.set("trip_shift", shift);
+
+      await apiJson(`/scan/${encodeURIComponent(studentCode)}/arrived?${q.toString()}`, { method: "POST" });
+      actionStatus.textContent = "ARRIVED logged";
+    }
+
+    async function pollPending() {
+      if (!currentStudentCode || finalized) return;
+      try {
+        const p = await apiJson(`/pending/${encodeURIComponent(currentStudentCode)}`);
+
+        if (p.status === "PENDING") {
+          const sec = p.seconds_remaining ?? 0;
+          timerLine.textContent = `⏱️ Wait ${fmtMMSS(sec)} (min:sec)`;
+          setNoCallEnabled(false);
+          return;
+        }
+
+        if (p.status === "NO_CALL_READY") {
+          timerLine.textContent = "⏱️ Time passed — NO CALL / NO SHOW enabled";
+          setNoCallEnabled(true);
+          return;
+        }
+
+        if (p.status === "RIDE") {
+          finalized = true;
+          stopPolling();
+          timerLine.textContent = "✅ Completed: RIDE";
+          actionStatus.textContent = "Already completed as RIDE.";
+          btnRide.disabled = true; btnRide.classList.add("btn-disabled");
+          btnNoCall.disabled = true; btnNoCall.classList.add("btn-disabled");
+          return;
+        }
+
+        if (p.status === "NO_CALL_NO_SHOW") {
+          finalized = true;
+          stopPolling();
+          timerLine.textContent = "❌ Completed: NO CALL / NO SHOW";
+          actionStatus.textContent = "Already completed as NO CALL / NO SHOW.";
+          btnRide.disabled = true; btnRide.classList.add("btn-disabled");
+          btnNoCall.disabled = true; btnNoCall.classList.add("btn-disabled");
+          return;
+        }
+
+        timerLine.textContent = `Status: ${p.status}`;
+      } catch (e) {
+        actionStatus.textContent = `Pending error: ${e.message}`;
+      }
+    }
+
+    function startPolling() {
+      stopPolling();
+      pollTimer = setInterval(pollPending, 1000);
+      pollPending();
+    }
+
+    function resetForNextScan(msg) {
+      finalized = true;
+      stopPolling();
+      actionStatus.textContent = msg || "Saved. Ready for next scan.";
+
+      setTimeout(() => {
+        studentCard.style.display = "none";
+        currentStudentCode = null;
+
+        finalized = false;
+        busy = false;
+
+        btnRide.disabled = false; btnRide.classList.remove("btn-disabled");
+        setNoCallEnabled(false);
+
+        timerLine.textContent = "⏱️ Waiting…";
+        actionStatus.textContent = "Ready.";
+      }, 700);
+    }
+
+    async function sendRide() {
+      if (!currentStudentCode || finalized || busy) return;
+      busy = true;
+      try {
+        const driver = driverEl.value.trim();
+        const aide = aideEl.value.trim();
+        const shift = getShift();
+
+        const q = new URLSearchParams();
+        if (driver) q.set("driver_code", driver);
+        if (aide) q.set("aide_code", aide);
+        if (shift) q.set("trip_shift", shift);
+
+        await apiJson(`/scan/${encodeURIComponent(currentStudentCode)}/ride?${q.toString()}`, { method: "POST" });
+        timerLine.textContent = "✅ Completed: RIDE";
+        resetForNextScan(`RIDE saved`);
+      } catch (e) {
+        actionStatus.textContent = `Ride error: ${e.message}`;
+      } finally {
+        busy = false;
+      }
+    }
+
+    async function sendNoCall() {
+      if (!currentStudentCode || finalized || busy) return;
+      if (btnNoCall.disabled) return;
+
+      busy = true;
+      try {
+        const driver = driverEl.value.trim();
+        const aide = aideEl.value.trim();
+        const shift = getShift();
+
+        const q = new URLSearchParams();
+        if (driver) q.set("driver_code", driver);
+        if (aide) q.set("aide_code", aide);
+        if (shift) q.set("trip_shift", shift);
+
+        await apiJson(`/scan/${encodeURIComponent(currentStudentCode)}/no_call_no_show?${q.toString()}`, { method: "POST" });
+        timerLine.textContent = "❌ Completed: NO CALL / NO SHOW";
+        resetForNextScan(`NO CALL / NO SHOW saved`);
+      } catch (e) {
+        actionStatus.textContent = `No show error: ${e.message}`;
+      } finally {
+        busy = false;
+      }
+    }
+
+    btnRide.onclick = () => sendRide();
+    btnNoCall.onclick = () => sendNoCall();
+
+    async function handleStudentCode(studentCode) {
+      currentStudentCode = studentCode;
+      finalized = false;
+      busy = false;
+
+      btnRide.disabled = false;
+      btnRide.classList.remove("btn-disabled");
+      setNoCallEnabled(false);
+
+      actionStatus.textContent = "Loading student…";
+      timerLine.textContent = "⏱️ Waiting…";
+
+      await loadStudent(studentCode);
+      await logArrived(studentCode);
+
+      actionStatus.textContent = "ARRIVED logged. Waiting…";
+      startPolling();
+    }
+
+    async function stopScanner() {
+      if (qr) {
+        try { await qr.stop(); } catch(e) {}
+      }
+    }
+
+    function openScannerOverlay() {
+      scannerOverlay.style.display = "block";
+      if (!qr) qr = new Html5Qrcode("reader");
+
+      qr.start(
+        { facingMode: "environment" },
+        { fps: 15, qrbox: undefined },
+        async (decodedText) => {
+          const code = decodedText.trim().toUpperCase();
+          await stopScanner();
+          scannerOverlay.style.display = "none";
+          handleStudentCode(code).catch(e => actionStatus.textContent = `Error: ${e.message}`);
+        },
+        () => {}
+      ).catch(err => {
+        sysStatus.style.display = "block";
+        sysStatus.textContent = "Camera error: " + err;
+      });
+    }
+
+    btnCloseScan.onclick = async () => {
+      await stopScanner();
+      scannerOverlay.style.display = "none";
+    };
+
+    btnStart.onclick = () => openScannerOverlay();
+
+    btnManual.onclick = () => {
+      const code = prompt("Enter StudentCode (ex: STU-2001):");
+      if (!code) return;
+      handleStudentCode(code.trim().toUpperCase()).catch(e => actionStatus.textContent = `Error: ${e.message}`);
+    };
+
+    checkHealthAndConfig();
+  </script>
+</body>
+</html>

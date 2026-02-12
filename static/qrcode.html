@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEDSCAN - QR Codes</title>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; background:#f5f5f5; margin:0; }
+    .wrap { max-width: 980px; margin: 18px auto; padding: 0 16px; }
+
+    /* Top bar (COPIED FROM INDEX) */
+    .topbar{
+      background:#111;
+      color:#fff;
+      border-radius:12px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 10px rgba(0,0,0,.12);
+      margin-bottom:14px;
+    }
+    .brand{ font-weight:900; letter-spacing:.5px; }
+    .rightbar{ display:flex; align-items:center; gap:10px; }
+    .pill{
+      display:flex; align-items:center; gap:8px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.16);
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:#aaa; }
+    .dot.online{ background:#25c26e; }
+    .dot.offline{ background:#ff3b30; }
+
+    .iconbtn{
+      width:40px; height:40px;
+      border-radius:10px;
+      border:0;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+      color:#111;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+    .iconbtn:active{ transform:scale(.98); }
+    .iconbtn svg{ width:20px; height:20px; }
+
+    /* Page cards (same look as index) */
+    .card { background:white; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding:18px; margin-bottom:16px; }
+
+    h1 { text-align:center; margin: 10px 0 4px; }
+    .sub { text-align:center; margin: 0 0 14px; font-weight:600; opacity:.85; }
+
+    label { font-weight:600; display:block; margin:10px 0 6px; }
+    input, select { width:100%; padding:12px; border-radius:10px; border:1px solid #ccc; font-size:16px; background:#fff; }
+
+    .btnrow { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button { flex:1; padding:14px; border-radius:12px; border:0; font-size:18px; font-weight:700; cursor:pointer; }
+    .btn-gray { background:#eaeaea; color:#111; }
+    .btn-blue { background:#0b66ff; color:white; }
+    .btn-scan { background:#111; color:white; }
+
+    .status { margin-top:10px; padding:10px; border-radius:10px; background:#f0f0f0; font-weight:600; }
+    .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* QR cards grid */
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    @media (max-width: 760px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    .qrCard{
+      border:1px solid #e6e6e6;
+      border-radius:12px;
+      padding:14px;
+      display:flex;
+      gap:14px;
+      align-items:center;
+      background:#fff;
+    }
+    .qrBox{
+      width:92px;
+      height:92px;
+      border-radius:12px;
+      border:1px dashed #cfcfcf;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex:0 0 auto;
+      overflow:hidden;
+      background:#fff;
+    }
+    .qrMeta{ flex:1; min-width: 0; }
+    .qrName{ font-size:20px; font-weight:800; margin:0; }
+    .qrCode{ margin:4px 0; font-weight:800; }
+    .qrSub{ margin: 4px 0; font-weight:600; opacity:.85; font-size:14px; }
+
+    /* Print */
+    @media print {
+      .topbar, .controls, #msg { display:none !important; }
+      body { background:#fff; }
+      .wrap { margin:0; max-width:none; padding:0; }
+      .card { box-shadow:none; border-radius:0; margin:0; padding:0; }
+      .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 0; padding: 12px; }
+      .qrCard { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <!-- TOPBAR (exact SVGs from your index) -->
+    <div class="topbar">
+      <div class="brand">SPEDSCAN</div>
+
+      <div class="rightbar">
+        <div class="pill" id="netPill">
+          <span class="dot offline" id="netDot"></span>
+          <span id="netText">Offline</span>
+        </div>
+
+        <!-- QR Codes -->
+        <button class="iconbtn" title="QR Codes" onclick="location.href='/qrcode'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="5" height="5"></rect>
+            <rect x="16" y="3" width="5" height="5"></rect>
+            <rect x="3" y="16" width="5" height="5"></rect>
+            <rect x="14" y="14" width="3" height="3"></rect>
+            <path d="M21 14v7"></path>
+            <path d="M14 21h7"></path>
+            <path d="M10 10h1v1h-1z"></path>
+            <path d="M12 12h1v1h-1z"></path>
+          </svg>
+        </button>
+
+        <!-- Setup -->
+        <button class="iconbtn" title="Setup" onclick="location.href='/setup'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 3.4 19.4l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 2.18 16H2a2 2 0 1 1 0-4h.18a1.65 1.65 0 0 0 1.22-2.82l-.06-.06A2 2 0 1 1 5.34 3.4l.06.06A1.65 1.65 0 0 0 7 3.18V3a2 2 0 1 1 4 0v.18a1.65 1.65 0 0 0 2.82 1.22l.06-.06A2 2 0 1 1 20.6 5.34l-.06.06A1.65 1.65 0 0 0 20.82 7H21a2 2 0 1 1 0 4h-.18a1.65 1.65 0 0 0-1.22 2.82z"></path>
+          </svg>
+        </button>
+
+        <!-- Today -->
+        <button class="iconbtn" title="Today Log" onclick="location.href='/today'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 3h10M5 7h14M5 19h14M9 11h6M9 15h6"></path>
+          </svg>
+        </button>
+
+        <!-- Validate -->
+        <button class="iconbtn" title="Validate" onclick="location.href='/validate'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6L9 17l-5-5"></path>
+          </svg>
+        </button>
+
+        <!-- Report -->
+        <button class="iconbtn" title="Report" onclick="location.href='/report'">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9V2h12v7"></path>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card controls">
+      <h1>Student QR Cards</h1>
+      <p class="sub">Each QR contains only the StudentCode (ex: <span class="mono">STU-1001</span>). Print &amp; laminate.</p>
+
+      <label>Bus (optional)</label>
+      <input id="bus" placeholder="ex: 12" />
+
+      <label>Search (optional)</label>
+      <input id="q" placeholder="name or student code" />
+
+      <div class="btnrow">
+        <button class="btn-blue" id="btnLoad">Load</button>
+        <button class="btn-scan" onclick="window.print()">Print</button>
+        <button class="btn-gray" onclick="location.href='/'">← Back</button>
+      </div>
+
+      <div class="status" id="msg">Ready.</div>
+    </div>
+
+    <!-- Grid -->
+    <div class="card">
+      <div class="grid" id="grid">
+        <div class="qrCard" style="justify-content:center; opacity:.8;">
+          <div class="qrMeta" style="text-align:center;">
+            <p class="qrName" style="margin:0;">Enter a bus number (optional) and click <b>Load</b>.</p>
+            <p class="qrSub" style="margin-top:6px;">Example: bus <span class="mono">12</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- QR library (works on LAN + ngrok) -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <script>
+    const netDot = document.getElementById("netDot");
+    const netText = document.getElementById("netText");
+
+    function updateNet() {
+      const online = navigator.onLine;
+      netDot.classList.toggle("online", online);
+      netDot.classList.toggle("offline", !online);
+      netText.textContent = online ? "Online" : "Offline";
+    }
+    window.addEventListener("online", updateNet);
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    const $ = (id)=>document.getElementById(id);
+    const msg = $("msg");
+    const grid = $("grid");
+
+    function safe(v){ return (v===null || v===undefined) ? "" : String(v); }
+
+    async function apiJson(url) {
+      const r = await fetch(url);
+      const txt = await r.text();
+      let data; try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!r.ok) throw new Error(data.detail || data.error || txt || r.statusText);
+      return data;
+    }
+
+    function renderEmpty(text){
+      grid.innerHTML = `
+        <div class="qrCard" style="justify-content:center; opacity:.8;">
+          <div class="qrMeta" style="text-align:center;">
+            <p class="qrName" style="margin:0;">${text}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function cardHtml(s){
+      const code = safe(s.StudentCode).trim().toUpperCase();
+      const name = safe(s.StudentName).trim();
+      const bus  = safe(s.BusNumber).trim();
+      const dob  = safe(s.DOB).trim();
+      const id = "qr_" + code.replace(/[^A-Z0-9]+/g, "_");
+
+      return `
+        <div class="qrCard">
+          <div class="qrBox"><canvas id="${id}" width="92" height="92"></canvas></div>
+          <div class="qrMeta">
+            <p class="qrName">${name || code}</p>
+            <div class="qrCode mono">${code}</div>
+            <div class="qrSub">Bus: <b class="mono">${bus || "—"}</b> &nbsp;•&nbsp; DOB: <b class="mono">${dob || "—"}</b></div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadCards(){
+      msg.textContent = "Loading…";
+      const bus = $("bus").value.trim();
+      const q = $("q").value.trim().toLowerCase();
+
+      const qs = new URLSearchParams();
+      if (bus) qs.set("bus", bus);
+
+      try {
+        // Your API works here
+        const students = await apiJson(`/students?${qs.toString()}`);
+
+        let list = Array.isArray(students) ? students : [];
+        if (q) {
+          list = list.filter(s => {
+            const name = (safe(s.StudentName) || "").toLowerCase();
+            const code = (safe(s.StudentCode) || "").toLowerCase();
+            return name.includes(q) || code.includes(q);
+          });
+        }
+
+        if (!list.length) {
+          renderEmpty("No students found.");
+          msg.textContent = "No students found.";
+          return;
+        }
+
+        grid.innerHTML = list.map(cardHtml).join("");
+
+        // Generate QR (StudentCode only)
+        for (const s of list) {
+          const code = safe(s.StudentCode).trim().toUpperCase();
+          const id = "qr_" + code.replace(/[^A-Z0-9]+/g, "_");
+          const canvas = document.getElementById(id);
+
+          await QRCode.toCanvas(canvas, code, {
+            errorCorrectionLevel: "M",
+            margin: 1,
+            width: 92
+          });
+        }
+
+        msg.textContent = `Loaded ${list.length} card(s)${bus ? " for bus " + bus : ""}.`;
+      } catch (e) {
+        renderEmpty("Error loading students.");
+        msg.textContent = "Error: " + e.message;
+      }
+    }
+
+    $("btnLoad").onclick = loadCards;
+
+    $("bus").addEventListener("keydown", (e)=>{ if(e.key==="Enter") loadCards(); });
+    $("q").addEventListener("keydown", (e)=>{ if(e.key==="Enter") loadCards(); });
+  </script>
+</body>
+</html>

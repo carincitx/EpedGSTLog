@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEDSCAN - Today</title>
+  <style>
+    /* ✅ FIX: prevents input/select from overflowing and overlapping */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body { font-family: system-ui, -apple-system, Arial; background:#f5f5f5; margin:0; }
+    .wrap { max-width: 980px; margin: 18px auto; padding: 0 16px; }
+
+    /* Top bar (MATCH INDEX) */
+    .topbar{
+      background:#111;
+      color:#fff;
+      border-radius:12px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 10px rgba(0,0,0,.12);
+      margin-bottom:14px;
+    }
+    .brand{ font-weight:900; letter-spacing:.5px; }
+    .rightbar{ display:flex; align-items:center; gap:10px; }
+    .pill{
+      display:flex; align-items:center; gap:8px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.16);
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:#aaa; }
+    .dot.online{ background:#25c26e; }
+    .dot.offline{ background:#ff3b30; }
+    .iconbtn{
+      width:40px; height:40px;
+      border-radius:10px;
+      border:0;
+      cursor:pointer;
+      font-size:18px;
+      font-weight:900;
+      background:#fff;
+      color:#111;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+
+    .card { background:white; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding:18px; margin-bottom:16px; }
+    h1 { text-align:center; margin: 10px 0 4px; }
+
+    label { font-weight:800; display:block; margin:10px 0 6px; }
+    input, select {
+      width:100%;
+      padding:12px;
+      border-radius:10px;
+      border:1px solid #ccc;
+      font-size:16px;
+      background:#fff;
+      /* ✅ extra-safe (redundant with global rule) */
+      box-sizing: border-box;
+    }
+
+    .row {
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-end;
+    }
+    /* ✅ FIX: force flex items to behave nicely and wrap instead of colliding */
+    .row > div {
+      flex: 1 1 320px;     /* grow/shrink, base width 320px */
+      min-width: 260px;    /* prevents squishing too far */
+    }
+
+    .btnrow { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button.big {
+      flex:1 1 260px;      /* ✅ wrap instead of overlap */
+      padding:14px;
+      border-radius:12px;
+      border:0;
+      font-size:18px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .btn-blue { background:#0b66ff; color:white; }
+    .btn-gray { background:#eaeaea; color:#111; }
+    .status { margin-top:10px; padding:10px; border-radius:10px; background:#f0f0f0; font-weight:800; }
+
+    table { width:100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align:left; padding:10px; border-bottom: 1px solid #eee; font-size: 14px; }
+    th { font-size: 13px; opacity: .8; }
+    .mono { font-variant-numeric: tabular-nums; }
+    .badge {
+      display:inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-weight: 900;
+      font-size: 12px;
+      background:#eaeaea;
+    }
+    .badge.ride { background: rgba(31,157,85,.18); }
+    .badge.noshow { background: rgba(217,4,41,.18); }
+    .badge.am { background: rgba(11,102,255,.16); }
+    .badge.pm { background: rgba(0,0,0,.10); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">SPEDSCAN</div>
+      <div class="rightbar">
+        <div class="pill" id="netPill">
+          <span class="dot offline" id="netDot"></span>
+          <span id="netText">Offline</span>
+        </div>
+        <button class="iconbtn" title="Scan" onclick="location.href='/'">🏠</button>
+        <button class="iconbtn" title="Setup" onclick="location.href='/setup'">⚙️</button>
+        <button class="iconbtn" title="Validate" onclick="location.href='/validate'">✅</button>
+        <button class="iconbtn" title="Report" onclick="location.href='/report'">🖨️</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>📋 Today Log</h1>
+
+      <div class="row">
+        <div>
+          <label>Bus (optional)</label>
+          <input id="bus" placeholder="ex: 12" />
+        </div>
+        <div>
+          <label>Shift</label>
+          <select id="shift">
+            <option value="">All</option>
+            <option value="AM">Morning (AM)</option>
+            <option value="PM">Afternoon (PM)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button class="big btn-blue" id="btnRefresh">🔄 Refresh</button>
+        <button class="big btn-gray" onclick="location.href='/'">← Back to Scan</button>
+      </div>
+
+      <div class="status" id="msg">Ready.</div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Bus</th>
+            <th>Shift</th>
+            <th>Driver</th>
+            <th>Aide</th>
+            <th>Status</th>
+            <th class="mono">Time (CT)</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="8">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const netDot = document.getElementById("netDot");
+    const netText = document.getElementById("netText");
+    function updateNet() {
+      const online = navigator.onLine;
+      netDot.classList.toggle("online", online);
+      netDot.classList.toggle("offline", !online);
+      netText.textContent = online ? "Online" : "Offline";
+    }
+    window.addEventListener("online", updateNet);
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    const $ = (id)=>document.getElementById(id);
+    const msg = $("msg");
+    const tbody = $("rows");
+
+    async function apiJson(url) {
+      const r = await fetch(url);
+      const txt = await r.text();
+      let data;
+      try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!r.ok) throw new Error(data.detail || txt || r.statusText);
+      return data;
+    }
+
+    function safe(v){ return (v === null || v === undefined) ? "" : String(v); }
+
+    async function load() {
+      msg.textContent = "Loading…";
+      tbody.innerHTML = `<tr><td colspan="8">Loading…</td></tr>`;
+
+      const bus = $("bus").value.trim();
+      const shift = $("shift").value.trim().toUpperCase();
+
+      const qs = new URLSearchParams();
+      if (bus) qs.set("bus", bus);
+
+      try {
+        const rows = await apiJson(`/logs/today?${qs.toString()}`);
+
+        let filtered = (rows || []).filter(r => {
+          const et = String(r.EventType || "").toUpperCase();
+          return et === "RIDE" || et === "NO_CALL_NO_SHOW";
+        });
+
+        if (shift) {
+          filtered = filtered.filter(r => String(r.TripShift || "").toUpperCase() === shift);
+        }
+
+        if (!filtered.length) {
+          tbody.innerHTML = `<tr><td colspan="8">No entries.</td></tr>`;
+          msg.textContent = "No entries.";
+          return;
+        }
+
+        tbody.innerHTML = filtered.map(r => {
+          const et = String(r.EventType || "").toUpperCase();
+          const badge = et === "RIDE"
+            ? `<span class="badge ride">RIDE</span>`
+            : `<span class="badge noshow">NO CALL</span>`;
+
+          const sh = String(r.TripShift || "").toUpperCase();
+          const shiftBadge = sh === "AM"
+            ? `<span class="badge am">AM</span>`
+            : (sh === "PM" ? `<span class="badge pm">PM</span>` : "");
+
+          const timeCT = `${safe(r.DateCT)} ${safe(r.TimeCT)}`;
+          return `
+            <tr>
+              <td>${safe(r.StudentName) || safe(r.StudentCode)}</td>
+              <td>${safe(r.BusNumber)}</td>
+              <td>${shiftBadge}</td>
+              <td>${safe(r.DriverCode)}</td>
+              <td>${safe(r.AideCode)}</td>
+              <td>${badge}</td>
+              <td class="mono">${timeCT.trim()}</td>
+              <td>${safe(r.Notes)}</td>
+            </tr>
+          `;
+        }).join("");
+
+        msg.textContent = `Loaded ${filtered.length} rows.`;
+      } catch (e) {
+        msg.textContent = `Error: ${e.message}`;
+        tbody.innerHTML = `<tr><td colspan="8">Error: ${e.message}</td></tr>`;
+      }
+    }
+
+    $("btnRefresh").onclick = load;
+    load();
+  </script>
+</body>
+</html>

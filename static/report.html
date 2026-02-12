@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEDSCAN - Report</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; background:#f5f5f5; margin:0; }
+    .wrap { max-width: 980px; margin: 18px auto; padding: 0 16px; }
+
+    /* Top bar (MATCH INDEX) */
+    .topbar{
+      background:#111;
+      color:#fff;
+      border-radius:12px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 10px rgba(0,0,0,.12);
+      margin-bottom:14px;
+    }
+    .brand{ font-weight:900; letter-spacing:.5px; }
+    .rightbar{ display:flex; align-items:center; gap:10px; }
+    .pill{
+      display:flex; align-items:center; gap:8px;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.16);
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:#aaa; }
+    .dot.online{ background:#25c26e; }
+    .dot.offline{ background:#ff3b30; }
+    .iconbtn{
+      width:40px; height:40px;
+      border-radius:10px;
+      border:0;
+      cursor:pointer;
+      font-size:18px;
+      font-weight:900;
+      background:#fff;
+      color:#111;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+
+    .card { background:white; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding:18px; margin-bottom:16px; }
+
+    /* ✅ FIXED ROW LAYOUT (no overlap) */
+    .row {
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-end;
+    }
+    .row > div {
+      flex: 1 1 260px;   /* grows/shrinks but prefers 260px */
+      min-width: 260px;
+    }
+    @media (max-width: 620px) {
+      .row > div {
+        flex: 1 1 100%;
+        min-width: 100%;
+      }
+    }
+
+    label { font-weight:900; display:block; margin:10px 0 6px; }
+    input, select { width:100%; padding:12px; border-radius:10px; border:1px solid #ccc; font-size:16px; background:#fff; }
+
+    .btnrow { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button { flex:1; padding:14px; border-radius:12px; border:0; font-size:18px; font-weight:900; cursor:pointer; }
+    .btn-blue { background:#0b66ff; color:white; }
+    .btn-dark { background:#111; color:#fff; }
+    .btn-gray { background:#eaeaea; color:#111; }
+    .status { margin-top:10px; padding:10px; border-radius:10px; background:#f0f0f0; font-weight:900; }
+
+    .sheet { border:1px solid #ddd; border-radius:12px; padding:16px; }
+
+    table { width:100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align:left; padding:8px; border: 1px solid #ddd; font-size: 13px; }
+    th { background:#f2f2f2; }
+    .mono { font-variant-numeric: tabular-nums; }
+
+    @media print {
+      .topbar, .controls { display:none !important; }
+      body { background:#fff; }
+      .wrap { margin:0; max-width:none; padding:0; }
+      .card { box-shadow:none; border-radius:0; margin:0; }
+      .sheet { border:none; padding:0; }
+      th { background:#fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">SPEDSCAN</div>
+      <div class="rightbar">
+        <div class="pill" id="netPill">
+          <span class="dot offline" id="netDot"></span>
+          <span id="netText">Offline</span>
+        </div>
+        <button class="iconbtn" title="Scan" onclick="location.href='/'">🏠</button>
+        <button class="iconbtn" title="Setup" onclick="location.href='/setup'">⚙️</button>
+        <button class="iconbtn" title="Today" onclick="location.href='/today'">📋</button>
+        <button class="iconbtn" title="Validate" onclick="location.href='/validate'">✅</button>
+      </div>
+    </div>
+
+    <div class="card controls">
+      <div class="row">
+        <div>
+          <label>Bus (optional)</label>
+          <input id="bus" placeholder="ex: 12" />
+        </div>
+        <div>
+          <label>Shift</label>
+          <select id="shift">
+            <option value="">All</option>
+            <option value="AM">Morning (AM)</option>
+            <option value="PM">Afternoon (PM)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button class="btn-blue" id="btnLoad">Load</button>
+        <button class="btn-dark" onclick="window.print()">Print</button>
+        <button class="btn-gray" onclick="location.href='/'">← Back</button>
+      </div>
+
+      <div class="status" id="msg">Ready.</div>
+    </div>
+
+    <div class="card">
+      <div class="sheet">
+        <table>
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>DOB</th>
+              <th>Bus</th>
+              <th>Shift</th>
+              <th>D</th>
+              <th>A</th>
+              <th>Status</th>
+              <th class="mono">Time (CT)</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="9">Load a report.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Online/Offline pill
+    const netDot = document.getElementById("netDot");
+    const netText = document.getElementById("netText");
+    function updateNet() {
+      const online = navigator.onLine;
+      netDot.classList.toggle("online", online);
+      netDot.classList.toggle("offline", !online);
+      netText.textContent = online ? "Online" : "Offline";
+    }
+    window.addEventListener("online", updateNet);
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    const $ = (id)=>document.getElementById(id);
+    const msg = $("msg");
+    const tbody = $("rows");
+
+    async function apiJson(url) {
+      const r = await fetch(url);
+      const txt = await r.text();
+      let data; try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!r.ok) throw new Error(data.detail || txt || r.statusText);
+      return data;
+    }
+
+    function safe(v){ return (v === null || v === undefined) ? "" : String(v); }
+
+    function fmtCT(iso) {
+      const d = new Date(iso);
+      const mm = String(d.getMonth()+1).padStart(2,"0");
+      const dd = String(d.getDate()).padStart(2,"0");
+      const yyyy = d.getFullYear();
+
+      let h = d.getHours();
+      const ampm = h >= 12 ? "PM" : "AM";
+      const shift = h < 12 ? "AM" : "PM";
+      h = h % 12; if (h === 0) h = 12;
+      const m = String(d.getMinutes()).padStart(2,"0");
+
+      return { text: `${mm}/${dd}/${yyyy} ${h}:${m} ${ampm}`, shift };
+    }
+
+    async function loadReport() {
+      msg.textContent = "Loading…";
+      tbody.innerHTML = `<tr><td colspan="9">Loading…</td></tr>`;
+
+      const bus = $("bus").value.trim();
+      const shiftFilter = $("shift").value.trim().toUpperCase();
+
+      const qs = new URLSearchParams();
+      if (bus) qs.set("bus", bus);
+
+      try {
+        const rows = await apiJson(`/logs/today?${qs.toString()}`);
+
+        let finalRows = (rows || []).filter(r => {
+          const et = String(r.EventType || "").toUpperCase();
+          return et === "RIDE" || et === "NO_CALL_NO_SHOW";
+        });
+
+        finalRows = finalRows.map(r => {
+          const t = r.EventTimeCentral ? fmtCT(r.EventTimeCentral) : { text:"", shift:"" };
+          return { ...r, _TimeCT: t.text, _Shift: t.shift };
+        });
+
+        if (shiftFilter) {
+          finalRows = finalRows.filter(r => String(r._Shift || "").toUpperCase() === shiftFilter);
+        }
+
+        if (!finalRows.length) {
+          tbody.innerHTML = `<tr><td colspan="9">No final entries for this selection.</td></tr>`;
+          msg.textContent = "No final entries.";
+          return;
+        }
+
+        tbody.innerHTML = finalRows.map(r => `
+          <tr>
+            <td>${safe(r.StudentName) || safe(r.StudentCode)}</td>
+            <td>${safe(r.DOB)}</td>
+            <td>${safe(r.BusNumber)}</td>
+            <td>${safe(r._Shift)}</td>
+            <td>${safe(r.DriverCode)}</td>
+            <td>${safe(r.AideCode)}</td>
+            <td>${String(r.EventType||"").toUpperCase()==="RIDE" ? "RIDE" : "NO CALL / NO SHOW"}</td>
+            <td class="mono">${safe(r._TimeCT)}</td>
+            <td>${safe(r.Notes)}</td>
+          </tr>
+        `).join("");
+
+        msg.textContent = `Loaded ${finalRows.length} rows.`;
+      } catch (e) {
+        msg.textContent = `Error: ${e.message}`;
+        tbody.innerHTML = `<tr><td colspan="9">Error: ${e.message}</td></tr>`;
+      }
+    }
+
+    $("btnLoad").onclick = loadReport;
+  </script>
+</body>
+</html>
